@@ -14,15 +14,17 @@ import {
   LogOut,
   RefreshCw,
   ShieldCheck,
+  TrendingUp,
   UserRound,
   WalletCards,
 } from 'lucide-react'
-import { getProfile, getSession, login, logout } from './api.js'
+import { generateSignals, getProfile, getSession, login, logout } from './api.js'
 
 const tabs = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'user', label: 'User', icon: UserRound },
   { id: 'activity', label: 'Activity', icon: Activity },
+  { id: 'signals', label: 'Signals', icon: TrendingUp },
 ]
 
 function Brand({ compact = false }) {
@@ -159,6 +161,7 @@ function Dashboard({ onLogout }) {
           {activeTab === 'user' && <UserTab profile={profile} error={profileError} loading={loadingProfile} onRetry={loadProfile} />}
           {activeTab === 'overview' && <OverviewTab profile={profile} loading={loadingProfile} onOpenUser={() => setActiveTab('user')} />}
           {activeTab === 'activity' && <ActivityTab />}
+          {activeTab === 'signals' && <SignalsTab />}
         </div>
       </section>
     </main>
@@ -226,4 +229,82 @@ export default function App() {
   return authenticated
     ? <Dashboard onLogout={() => setAuthenticated(false)} />
     : <LoginScreen onLogin={() => setAuthenticated(true)} />
+}
+
+function SignalsTab() {
+  const [parameters, setParameters] = useState({
+    short_sma: '6',
+    long_sma: '30',
+    lookback_days: '90',
+    max_stocks: '25',
+  })
+  const [result, setResult] = useState(null)
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  function update(field, value) {
+    setParameters((current) => ({ ...current, [field]: value }))
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    const values = Object.fromEntries(
+      Object.entries(parameters).map(([key, value]) => [key, Number(value)]),
+    )
+    if (values.short_sma >= values.long_sma) {
+      setError('Short SMA must be smaller than Long SMA.')
+      return
+    }
+    setError('')
+    setSubmitting(true)
+    try {
+      setResult(await generateSignals(values))
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const formatValue = (value) => new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value)
+
+  return <>
+    <PageHeading eyebrow="MARKET SCANNER" title="Signals" description="Find recent Nifty 100 daily moving-average crossovers." />
+    <form className="signals-controls" onSubmit={handleSubmit}>
+      <label><span>Short SMA</span><input type="number" min="1" max="100" required value={parameters.short_sma} onChange={(event) => update('short_sma', event.target.value)} /></label>
+      <label><span>Long SMA</span><input type="number" min="2" max="200" required value={parameters.long_sma} onChange={(event) => update('long_sma', event.target.value)} /></label>
+      <label><span>Lookback days</span><input type="number" min="1" max="1000" required value={parameters.lookback_days} onChange={(event) => update('lookback_days', event.target.value)} /></label>
+      <label><span>Max stocks</span><input type="number" min="1" max="100" required value={parameters.max_stocks} onChange={(event) => update('max_stocks', event.target.value)} /></label>
+      <button className="primary-button signals-submit" type="submit" disabled={submitting}>
+        {submitting ? <><LoaderCircle className="spin" size={16} /> Scanning</> : <><TrendingUp size={16} /> Generate signals</>}
+      </button>
+    </form>
+    <div className="signals-footnote">Daily candles · NSE instruments · Ranked by latest crossover</div>
+    {error && <div className="signals-error" role="alert"><CircleHelp size={17} /><span>{error}</span></div>}
+
+    {submitting ? <div className="loading-state signals-loading"><LoaderCircle className="spin" size={21} /><span>Loading Nifty 100 instruments and daily candles…</span></div> : result ? <>
+      <div className="signals-summary">
+        <div><strong>{result.signals.length}</strong><span>signals found</span></div>
+        <span>{result.matched_symbols} of {result.scanned_symbols} constituents matched to NSE instruments</span>
+      </div>
+      {result.signals.length ? <div className="signals-table-scroll">
+        <table className="signals-table">
+          <thead><tr><th>Rank</th><th>Ticker</th><th>Company</th><th>Crossover type</th><th>Crossover date</th><th>Close</th><th>SMA {result.short_sma}</th><th>SMA {result.long_sma}</th></tr></thead>
+          <tbody>{result.signals.map((signal, index) => <tr key={`${signal.ticker}-${signal.crossover_date}`}>
+            <td className="rank-cell">{String(index + 1).padStart(2, '0')}</td>
+            <td className="ticker-cell">{signal.ticker}</td>
+            <td className="company-cell">{signal.company || '—'}</td>
+            <td><span className={`crossover-badge ${signal.crossover_type.toLowerCase()}`}>{signal.crossover_type}</span></td>
+            <td className="date-cell">{new Date(`${signal.crossover_date}T00:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+            <td className="number-cell">₹{formatValue(signal.close)}</td>
+            <td className="number-cell">₹{formatValue(signal.short_sma)}</td>
+            <td className="number-cell">₹{formatValue(signal.long_sma)}</td>
+          </tr>)}</tbody>
+        </table>
+      </div> : <div className="signals-empty"><TrendingUp size={21} /><strong>No crossovers found</strong><span>Try a longer lookback or different SMA periods.</span></div>}
+    </> : <div className="signals-empty signals-ready"><TrendingUp size={21} /><strong>Ready to scan</strong><span>Generate signals to see recent bullish and bearish crossovers.</span></div>}
+  </>
 }

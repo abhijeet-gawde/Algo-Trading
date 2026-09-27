@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -71,6 +72,32 @@ class SessionApiTests(unittest.TestCase):
         main.save_session("api-key", "private-access-token")
         self.assertEqual(main.logout(), {"authenticated": False})
         self.assertIsNone(main.read_session())
+
+
+class CrossoverTests(unittest.TestCase):
+    def candles(self, closes: list[float]) -> list[dict[str, object]]:
+        return [
+            {"date": datetime(2026, 1, index + 1), "close": close}
+            for index, close in enumerate(closes)
+        ]
+
+    def test_detects_bullish_crossover(self) -> None:
+        result = main.latest_crossover(self.candles([5, 4, 3, 4, 5]), 2, 3, 2)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["crossover_type"], "Bullish")
+        self.assertEqual(result["crossover_date"], "2026-01-05")
+
+    def test_detects_bearish_crossover(self) -> None:
+        result = main.latest_crossover(self.candles([1, 2, 5, 4, 3]), 2, 3, 2)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["crossover_type"], "Bearish")
+
+    def test_ignores_crossovers_outside_lookback(self) -> None:
+        result = main.latest_crossover(self.candles([5, 4, 3, 6, 3]), 2, 3, 1)
+
+        self.assertIsNone(result)
 
 
 if __name__ == "__main__":

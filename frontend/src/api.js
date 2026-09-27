@@ -21,3 +21,7 @@ export const login = (credentials) => request('/login', {
   method: 'POST',
   body: JSON.stringify(credentials),
 })
+export const generateSignals = (parameters) => request('/signals', {
+  method: 'POST',
+  body: JSON.stringify(parameters),
+})
